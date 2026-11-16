@@ -1,4 +1,4 @@
-# Receptor del hook UserPromptSubmit. Build: podman build -t prompt-guard:0.1 -f Containerfile .
+# Receptor del hook UserPromptSubmit. Build: podman build -t prompt-logger:0.1 -f Containerfile .
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
 WORKDIR /app
 COPY hook_receiver.py .

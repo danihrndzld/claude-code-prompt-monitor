@@ -11,7 +11,7 @@ sec "Cluster y usuario"
 oc version 2>/dev/null | head -3; oc whoami; oc whoami --show-server
 oc get clusterversion 2>/dev/null | tail -1
 
-sec "Dominio de Routes (define otel.<dominio> y prompt-guard.<dominio>)"
+sec "Dominio de Routes (define otel.<dominio> y prompt-logger.<dominio>)"
 oc get ingresses.config.openshift.io cluster -o jsonpath='{.spec.domain}{"\n"}' 2>/dev/null
 
 sec "Operadores instalados relevantes"
@@ -30,16 +30,10 @@ sec "LokiStacks y colectores OTel ya desplegados"
 oc get lokistack -A 2>/dev/null; oc get opentelemetrycollector -A 2>/dev/null
 
 sec "Namespaces candidatos"
-oc get ns 2>/dev/null | grep -iE 'monitor|logging|observab|rhoai|redhat-ods|kong|lakera|seguridad' || echo "(ninguno con esos nombres)"
+oc get ns 2>/dev/null | grep -iE 'monitor|logging|observab|rhoai|redhat-ods|seguridad' || echo "(ninguno con esos nombres)"
 
 sec "OpenShift AI"
 oc get datasciencecluster -A 2>/dev/null || echo "(sin RHOAI visible)"
-
-sec "Kong y Lakera"
-oc get pods -A 2>/dev/null | grep -iE 'kong|lakera' || echo "(sin pods kong/lakera)"
-
-sec "Nodos con GPU (Lakera Guard self-hosted puede usarlas)"
-oc get nodes -L nvidia.com/gpu.present 2>/dev/null | head
 
 sec "Permisos del usuario actual"
 for v in "create namespace" "create deployment -n prompts-monitoreo" "create route -n prompts-monitoreo" \

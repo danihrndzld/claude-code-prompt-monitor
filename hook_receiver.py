@@ -3,18 +3,15 @@
 # ///
 """Receptor del hook UserPromptSubmit (tipo http) de Claude Code.
 
-Modo lab (sin variables de entorno): guarda cada evento en data/hooks.jsonl y bloquea
-si el prompt contiene la palabra BLOQUEAR.
+Solo registra: siempre responde {} y Claude Code sigue con el prompt.
+
+Modo lab (sin variables de entorno): guarda cada evento en data/hooks.jsonl.
 
 Modo cluster (variables de entorno):
   OTLP_ENDPOINT  http://otel-collector:4318/v1/logs   reenvía el evento al colector (OTLP/JSON)
   OTLP_TOKEN     bearer que exige el colector
-  LAKERA_URL     http://lakera-guard:8000/v2/guard    consulta Lakera Guard; flagged => block
-  LAKERA_TOKEN   bearer de Lakera, si aplica
   HOOK_TOKEN     bearer que debe traer Claude Code en la cabecera Authorization
 
-Si Lakera no responde en 5 s el prompt pasa (fail-open): el hook tiene 10 s de timeout y un
-gate caído no puede dejar sin escribir a todos los desarrolladores.
 Uso: uv run hook_receiver.py [puerto]
 """
 import json
@@ -28,8 +25,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 OUT = pathlib.Path(__file__).with_name("data") / "hooks.jsonl"
 MAX_BODY = 1_000_000  # un prompt real no pasa de esto; más grande se rechaza con 413
-BLOCK_WORD = "BLOQUEAR"  # ponytail: marcador fijo para el lab; Lakera cuando LAKERA_URL exista
-ENV = {k: os.environ.get(k, "") for k in ("OTLP_ENDPOINT", "OTLP_TOKEN", "LAKERA_URL", "LAKERA_TOKEN", "HOOK_TOKEN")}
+ENV = {k: os.environ.get(k, "") for k in ("OTLP_ENDPOINT", "OTLP_TOKEN", "HOOK_TOKEN")}
 
 
 def log(msg: str) -> None:
@@ -45,43 +41,29 @@ def post_json(url: str, payload: dict, token: str = "", timeout: float = 5.0) ->
         return json.loads(r.read() or b"{}")
 
 
-def decide(prompt: str) -> dict:
-    if ENV["LAKERA_URL"]:
-        try:  # contrato v2 de Lakera Guard: {"messages":[...]} -> {"flagged": bool, ...}
-            r = post_json(ENV["LAKERA_URL"], {"messages": [{"role": "user", "content": prompt}]}, ENV["LAKERA_TOKEN"])
-            return {"decision": "block", "reason": "Prompt bloqueado por Lakera Guard"} if r.get("flagged") else {}
-        except (urllib.error.URLError, TimeoutError, ValueError) as e:
-            log(f"lakera sin respuesta, fail-open: {e}")
-            return {}
-    if BLOCK_WORD in prompt:
-        return {"decision": "block", "reason": "Bloqueado por el gate DLP de prueba"}
-    return {}
-
-
 def kv(k: str, v) -> dict:
     return {"key": k, "value": {"stringValue": str(v)}}
 
 
-def to_otlp(ev: dict, verdict: dict) -> dict:
+def to_otlp(ev: dict) -> dict:
     attrs = {
-        "event.name": "prompt_guard.user_prompt",
+        "event.name": "prompt_logger.user_prompt",
         "session.id": ev.get("session_id", ""),
         "prompt.id": ev.get("prompt_id", ""),
         "cwd": ev.get("cwd", ""),
         "permission_mode": ev.get("permission_mode", ""),
-        "decision": verdict.get("decision", "allow"),
         "prompt": ev.get("prompt", ""),
     }
     record = {"timeUnixNano": str(time.time_ns()), "severityText": "INFO",
-              "body": {"stringValue": "prompt_guard.user_prompt"}, "attributes": [kv(k, v) for k, v in attrs.items()]}
-    return {"resourceLogs": [{"resource": {"attributes": [kv("service.name", "prompt-guard")]},
-                              "scopeLogs": [{"scope": {"name": "prompt-guard"}, "logRecords": [record]}]}]}
+              "body": {"stringValue": "prompt_logger.user_prompt"}, "attributes": [kv(k, v) for k, v in attrs.items()]}
+    return {"resourceLogs": [{"resource": {"attributes": [kv("service.name", "prompt-logger")]},
+                              "scopeLogs": [{"scope": {"name": "prompt-logger"}, "logRecords": [record]}]}]}
 
 
-def persist(ev: dict, verdict: dict) -> None:
+def persist(ev: dict) -> None:
     if ENV["OTLP_ENDPOINT"]:
         try:
-            post_json(ENV["OTLP_ENDPOINT"], to_otlp(ev, verdict), ENV["OTLP_TOKEN"])
+            post_json(ENV["OTLP_ENDPOINT"], to_otlp(ev), ENV["OTLP_TOKEN"])
         except (urllib.error.URLError, TimeoutError) as e:
             log(f"colector sin respuesta, evento perdido: {e}")
         return
@@ -105,6 +87,9 @@ class Handler(BaseHTTPRequestHandler):
         if not 0 <= n <= MAX_BODY:
             self.send_response(413)
             self.end_headers()
+            # deja rastro sin leer el cuerpo: auditoría de que hubo un prompt fuera de tamaño
+            persist({"_received_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "_path": self.path,
+                     "_rejected": "content-length fuera de rango", "_content_length": n})
             return
         try:
             ev = json.loads(self.rfile.read(n))
@@ -115,24 +100,20 @@ class Handler(BaseHTTPRequestHandler):
         ev["_received_at"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
         ev["_path"] = self.path
         prompt = str(ev.get("prompt", ""))
-        verdict = decide(prompt)
-        persist(ev, verdict)
-        body = json.dumps(verdict).encode()
-        self.send_response(200)
+        self.send_response(200)  # responde antes de guardar: el registro no retrasa el prompt
         self.send_header("content-type", "application/json")
-        self.send_header("content-length", str(len(body)))
+        self.send_header("content-length", "2")
         self.end_headers()
-        self.wfile.write(body)
+        self.wfile.write(b"{}")
+        persist(ev)
         log(f"{ev['_received_at']} {ev.get('hook_event_name')} session={str(ev.get('session_id', ''))[:8]} "
-            f"{'prompt=' + repr(prompt[:60]) if not ENV['OTLP_ENDPOINT'] else f'len={len(prompt)}'} -> {body.decode()}")
+            f"{'prompt=' + repr(prompt[:60]) if not ENV['OTLP_ENDPOINT'] else f'len={len(prompt)}'}")
 
     def log_message(self, *_):  # silencia el log por defecto de http.server
         pass
 
 
 if __name__ == "__main__":
-    if not ENV["LAKERA_URL"]:
-        assert decide("hola") == {} and decide("x BLOQUEAR y")["decision"] == "block"
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8080
     modo = "cluster" if ENV["OTLP_ENDPOINT"] else "lab"
     log(f"hook receiver [{modo}] en http://0.0.0.0:{port}/hooks/prompt -> {ENV['OTLP_ENDPOINT'] or OUT}")

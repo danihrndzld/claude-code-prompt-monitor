@@ -7,7 +7,7 @@
     "OTEL_EXPORTER_OTLP_ENDPOINT": "https://otel.example.internal",
     "OTEL_EXPORTER_OTLP_HEADERS": "Authorization=Bearer <OTLP_INGEST_TOKEN>",
     "OTEL_LOG_USER_PROMPTS": "1",
-    "PROMPT_GUARD_TOKEN": "<HOOK_TOKEN>",
+    "PROMPT_LOGGER_TOKEN": "<HOOK_TOKEN>",
     "NODE_EXTRA_CA_CERTS": "/Library/Application Support/ClaudeCode/corp-ca.pem"
   },
   "hooks": {
@@ -16,16 +16,16 @@
         "hooks": [
           {
             "type": "http",
-            "url": "https://prompt-guard.example.internal/hooks/prompt",
+            "url": "https://prompt-logger.example.internal/hooks/prompt",
             "timeout": 10,
-            "headers": { "Authorization": "Bearer $PROMPT_GUARD_TOKEN" },
-            "allowedEnvVars": ["PROMPT_GUARD_TOKEN"]
+            "headers": { "Authorization": "Bearer $PROMPT_LOGGER_TOKEN" },
+            "allowedEnvVars": ["PROMPT_LOGGER_TOKEN"]
           }
         ]
       }
     ]
   },
   "allowManagedHooksOnly": true,
-  "allowedHttpHookUrls": ["https://prompt-guard.example.internal/*"],
+  "allowedHttpHookUrls": ["https://prompt-logger.example.internal/*"],
   "forceRemoteSettingsRefresh": true
 }

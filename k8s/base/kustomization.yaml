@@ -4,7 +4,7 @@ namespace: prompts-monitoreo
 resources:
   - namespace.yaml
   - collector.yaml
-  - prompt-guard.yaml
+  - prompt-logger.yaml
   - networkpolicy.yaml
 configMapGenerator:
   - name: otel-config
