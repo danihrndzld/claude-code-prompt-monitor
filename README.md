@@ -98,6 +98,8 @@ Reemplaza `example.internal` y `registry.example.internal` por tus dominios.
 ## Límites conocidos
 
 - Los tokens de ingesta viajan en managed settings y el usuario los puede leer. Frenan tráfico ajeno a la organización, no a un desarrollador interno.
+- Las laptops y `prompt-guard` comparten `OTLP_INGEST_TOKEN`, así que un cliente puede enviar eventos que parecen del guard (`service.name=prompt-guard`). Para auditoría estricta, dale a `prompt-guard` un token propio y un receptor del colector sin Route.
+- En modo cluster el receptor no escribe el texto del prompt en su log, solo el largo. En modo lab sí lo escribe.
 - El chat de Claude Desktop no pasa por Claude Code, así que este sistema no lo registra. La pestaña Cowork tiene su propia telemetría OTLP y puede apuntar al mismo colector.
 - Las sesiones de Claude Code en la nube corren en VMs de Anthropic y no alcanzan un colector on-premise.
 - El prompt es dato confidencial: fija la retención y el acceso al volumen o al bucket antes de producción.
