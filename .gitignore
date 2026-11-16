@@ -1,0 +1,4 @@
+data/
+k8s/base/secrets.env
+.DS_Store
+.omc/

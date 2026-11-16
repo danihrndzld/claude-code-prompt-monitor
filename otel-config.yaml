@@ -1,0 +1,32 @@
+# Lab local: recibe OTLP de Claude Code y lo escribe a disco (JSON lines).
+# ponytail: un solo colector con exporter file; Loki/Grafana quedan para OpenShift.
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+processors:
+  batch:
+    timeout: 2s
+
+exporters:
+  debug:
+    verbosity: detailed
+  file/logs:
+    path: /data/otel-logs.jsonl
+  file/metrics:
+    path: /data/otel-metrics.jsonl
+
+service:
+  pipelines:
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug, file/logs]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [file/metrics]

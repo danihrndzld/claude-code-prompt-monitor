@@ -1,0 +1,73 @@
+# Colector OpenTelemetry (perfil PVC). Una réplica porque el volumen es RWO;
+# con el perfil loki (overlays/loki) sube a 2 réplicas sin volumen.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: prompts-data
+spec:
+  accessModes: [ReadWriteOnce]
+  # storageClassName: ocs-storagecluster-ceph-rbd   # fijar con el resultado de discovery.sh
+  resources:
+    requests:
+      storage: 50Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-collector
+  labels: { app: otel-collector }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: otel-collector }
+  template:
+    metadata:
+      labels: { app: otel-collector }
+    spec:
+      containers:
+        - name: collector
+          image: docker.io/otel/opentelemetry-collector-contrib:0.145.0
+          args: ["--config", "/etc/otelcol-contrib/config.yaml"]
+          env:
+            - name: OTLP_INGEST_TOKEN
+              valueFrom:
+                secretKeyRef: { name: prompts-tokens, key: OTLP_INGEST_TOKEN }
+          ports:
+            - { name: otlp-http, containerPort: 4318 }
+          volumeMounts:
+            - { name: config, mountPath: /etc/otelcol-contrib, readOnly: true }
+            - { name: data, mountPath: /data }
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { memory: 512Mi }
+          readinessProbe:
+            httpGet: { path: /, port: 4318 }
+            initialDelaySeconds: 5
+      volumes:
+        - name: config
+          configMap: { name: otel-config }
+        - name: data
+          persistentVolumeClaim: { claimName: prompts-data }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector
+spec:
+  selector: { app: otel-collector }
+  ports:
+    - { name: otlp-http, port: 4318, targetPort: otlp-http }
+---
+# Route de OpenShift. En Kubernetes sin OpenShift, reemplazar por un Ingress con TLS.
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: otel
+spec:
+  host: otel.example.internal
+  to: { kind: Service, name: otel-collector }
+  port: { targetPort: otlp-http }
+  tls:
+    termination: edge          # usa el certificado comodín del router; si es CA interna, NODE_EXTRA_CA_CERTS en el cliente
+    insecureEdgeTerminationPolicy: Redirect

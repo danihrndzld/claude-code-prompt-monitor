@@ -1,0 +1,43 @@
+# Perfil PVC: el colector escribe JSON lines rotados en un volumen persistente (/data).
+# Mismo contrato que el lab local; cambia el destino, no el cliente.
+extensions:
+  bearertokenauth:
+    token: ${env:OTLP_INGEST_TOKEN}
+
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+        auth:
+          authenticator: bearertokenauth
+
+processors:
+  batch:
+    timeout: 2s
+
+exporters:
+  file/logs:
+    path: /data/otel-logs.jsonl
+    rotation:
+      max_megabytes: 256
+      max_days: 30
+      max_backups: 60
+  file/metrics:
+    path: /data/otel-metrics.jsonl
+    rotation:
+      max_megabytes: 128
+      max_days: 7
+      max_backups: 7
+
+service:
+  extensions: [bearertokenauth]
+  pipelines:
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [file/logs]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [file/metrics]

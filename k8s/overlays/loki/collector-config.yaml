@@ -1,0 +1,44 @@
+# Perfil Loki: exporta al gateway del LokiStack por OTLP. Validar en discovery:
+# nombre del gateway, tenant y el token de la ServiceAccount con permiso de escritura.
+extensions:
+  bearertokenauth/ingest:
+    token: ${env:OTLP_INGEST_TOKEN}
+  bearertokenauth/loki:
+    filename: /var/run/secrets/kubernetes.io/serviceaccount/token
+
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+        auth:
+          authenticator: bearertokenauth/ingest
+
+processors:
+  batch:
+    timeout: 2s
+  resource/tenant:
+    attributes:
+      - { key: tenant, value: prompts, action: upsert }
+
+exporters:
+  otlphttp/loki:
+    endpoint: https://prompts-loki-gateway-http.prompts-monitoreo.svc:8080/api/logs/v1/application/otlp
+    auth:
+      authenticator: bearertokenauth/loki
+    tls:
+      ca_file: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
+  prometheus:
+    endpoint: 0.0.0.0:8889
+
+service:
+  extensions: [bearertokenauth/ingest, bearertokenauth/loki]
+  pipelines:
+    logs:
+      receivers: [otlp]
+      processors: [resource/tenant, batch]
+      exporters: [otlphttp/loki]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [prometheus]

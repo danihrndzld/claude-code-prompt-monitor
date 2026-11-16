@@ -1,0 +1,32 @@
+# Destino final de los prompts en el perfil Loki: un bucket S3 de ODF (NooBaa).
+# 1) El ObjectBucketClaim crea el bucket y un Secret/ConfigMap con credenciales y endpoint.
+# 2) El Secret lokistack-s3 se arma a partir de esos valores (comandos en README.md).
+# 3) El LokiStack guarda chunks e índice en ese bucket; Grafana consulta por LogQL.
+apiVersion: objectbucket.io/v1alpha1
+kind: ObjectBucketClaim
+metadata:
+  name: prompts-loki-bucket
+spec:
+  generateBucketName: prompts-loki-bucket
+  storageClassName: openshift-storage.noobaa.io   # confirmar con discovery.sh
+---
+apiVersion: loki.grafana.com/v1
+kind: LokiStack
+metadata:
+  name: prompts-loki
+spec:
+  size: 1x.extra-small
+  storage:
+    schemas:
+      - version: v13
+        effectiveDate: "2026-01-01"
+    secret:
+      name: lokistack-s3          # keys: access_key_id, access_key_secret, bucketnames, endpoint
+      type: s3
+  storageClassName: ocs-storagecluster-ceph-rbd   # PVC del ingester/compactor; confirmar con discovery.sh
+  tenants:
+    mode: openshift-logging
+  limits:
+    global:
+      retention:
+        days: 90                 # retención de prompts: la fija Cumplimiento

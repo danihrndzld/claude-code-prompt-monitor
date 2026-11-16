@@ -1,0 +1,34 @@
+# Perfil Loki: el colector deja de escribir a disco y envía a un LokiStack cuyo
+# almacenamiento es un bucket S3 de ODF (NooBaa). Aplicar: oc apply -k k8s/overlays/loki
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: prompts-monitoreo
+resources:
+  - ../../base
+  - lokistack.yaml
+configMapGenerator:
+  - name: otel-config
+    behavior: replace
+    files:
+      - config.yaml=collector-config.yaml
+generatorOptions:
+  disableNameSuffixHash: true
+patches:
+  - target: { kind: Deployment, name: otel-collector }
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 2
+      - op: replace
+        path: /spec/strategy
+        value: { type: RollingUpdate }
+      - op: remove
+        path: /spec/template/spec/volumes/1
+      - op: remove
+        path: /spec/template/spec/containers/0/volumeMounts/1
+  - target: { kind: PersistentVolumeClaim, name: prompts-data }
+    patch: |
+      $patch: delete
+      apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata: { name: prompts-data }

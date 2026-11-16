@@ -1,0 +1,31 @@
+{
+  "env": {
+    "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
+    "OTEL_LOGS_EXPORTER": "otlp",
+    "OTEL_METRICS_EXPORTER": "otlp",
+    "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
+    "OTEL_EXPORTER_OTLP_ENDPOINT": "https://otel.example.internal",
+    "OTEL_EXPORTER_OTLP_HEADERS": "Authorization=Bearer <OTLP_INGEST_TOKEN>",
+    "OTEL_LOG_USER_PROMPTS": "1",
+    "PROMPT_GUARD_TOKEN": "<HOOK_TOKEN>",
+    "NODE_EXTRA_CA_CERTS": "/Library/Application Support/ClaudeCode/corp-ca.pem"
+  },
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "http",
+            "url": "https://prompt-guard.example.internal/hooks/prompt",
+            "timeout": 10,
+            "headers": { "Authorization": "Bearer $PROMPT_GUARD_TOKEN" },
+            "allowedEnvVars": ["PROMPT_GUARD_TOKEN"]
+          }
+        ]
+      }
+    ]
+  },
+  "allowManagedHooksOnly": true,
+  "allowedHttpHookUrls": ["https://prompt-guard.example.internal/*"],
+  "forceRemoteSettingsRefresh": true
+}

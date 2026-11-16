@@ -1,0 +1,29 @@
+# Solo el router de OpenShift entra desde afuera; dentro del namespace solo prompt-guard
+# habla con el colector. Todo lo demás queda cerrado.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ingreso-solo-router
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              policy-group.network.openshift.io/ingress: ""
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: prompt-guard-a-colector
+spec:
+  podSelector:
+    matchLabels: { app: otel-collector }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: { app: prompt-guard }
+      ports:
+        - { port: 4318, protocol: TCP }

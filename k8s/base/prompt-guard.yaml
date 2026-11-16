@@ -1,0 +1,58 @@
+# Receptor del hook UserPromptSubmit: valida token, consulta Lakera, reenvía al colector.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prompt-guard
+  labels: { app: prompt-guard }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: prompt-guard }
+  template:
+    metadata:
+      labels: { app: prompt-guard }
+    spec:
+      containers:
+        - name: receiver
+          image: registry.example.internal/platform/prompt-guard:0.1   # build con ../Containerfile
+          ports:
+            - { name: http, containerPort: 8080 }
+          env:
+            - { name: OTLP_ENDPOINT, value: "http://otel-collector:4318/v1/logs" }
+            # - { name: LAKERA_URL, value: "http://lakera-guard.seguridad.svc:8000/v2/guard" }   # activar cuando Lakera esté desplegado
+            - name: OTLP_TOKEN
+              valueFrom: { secretKeyRef: { name: prompts-tokens, key: OTLP_INGEST_TOKEN } }
+            - name: HOOK_TOKEN
+              valueFrom: { secretKeyRef: { name: prompts-tokens, key: HOOK_TOKEN } }
+            - name: LAKERA_TOKEN
+              valueFrom: { secretKeyRef: { name: prompts-tokens, key: LAKERA_TOKEN, optional: true } }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { memory: 128Mi }
+          readinessProbe:
+            tcpSocket: { port: http }
+            initialDelaySeconds: 3
+          livenessProbe:
+            tcpSocket: { port: http }
+            periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prompt-guard
+spec:
+  selector: { app: prompt-guard }
+  ports:
+    - { name: http, port: 8080, targetPort: http }
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: prompt-guard
+spec:
+  host: prompt-guard.example.internal
+  to: { kind: Service, name: prompt-guard }
+  port: { targetPort: http }
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
